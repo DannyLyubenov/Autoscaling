@@ -1,0 +1,31 @@
+---
+
+- hosts: mywebservers
+  become: yes
+  
+  vars:
+    - MySecondMsg: "Hello"
+
+  tasks:
+   - name: install the nginx rpm from a remote repo
+     yum:
+         name: http://nginx.org/packages/centos/7/noarch/RPMS/nginx-release-centos-7-0.el7.ngx.noarch.rpm
+         state: present
+   
+   - name: please install NginX  
+     yum:
+         name: nginx
+         state: latest
+              
+   - name: Make sure a service is running
+     systemd:
+         state: started 
+         name: nginx  
+  
+   - name: index.html copy
+     vars: 
+     - MyMessage: "{{ ansible_all_ipv4_addresses }}"
+     template:
+         src: index.html.j2 
+         dest: /usr/share/nginx/html/index.html
+
