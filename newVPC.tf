@@ -243,7 +243,7 @@ resource "aws_autoscaling_group" "scale_config" {
 }
 
 #######################################
-#               Key
+#               RSA Key
 #######################################
 resource "aws_key_pair" "CogKey" {
   key_name   = "Cog-key"
