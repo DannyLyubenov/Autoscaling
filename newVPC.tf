@@ -71,24 +71,6 @@ resource "aws_route" "r" {
 }
 
 #######################################
-#             EC2 Instances
-#######################################
-resource "aws_instance" "web" {
-  count                       = "${length(var.cidrs)}"
-  ami                         = "ami-3548444c"
-  instance_type               = "t2.micro"
-  associate_public_ip_address = true                                   #auto assign IPv4 address
-  vpc_security_group_ids      = ["${aws_security_group.allow_all.id}"]
-  key_name                    = "${aws_key_pair.CogKey.key_name}"
-
-  tags {
-    Name = "${format("instance_%s", "${element(data.aws_availability_zones.available.names, count.index)}")}"
-  }
-
-  subnet_id = "${element(aws_subnet.subnet.*.id,count.index)}"
-}
-
-#######################################
 #             Security Groups
 #######################################
 resource "aws_security_group" "allow_all" {
@@ -164,12 +146,6 @@ resource "aws_lb_target_group" "target" {
 #######################################
 #      Target Group Attachement
 #######################################
-resource "aws_lb_target_group_attachment" "attach" {
-  count            = "${length(var.cidrs)}"
-  target_group_arn = "${aws_lb_target_group.target.arn}"
-  target_id        = "${element(aws_instance.web.*.id,count.index)}"
-  port             = 80
-}
 
 resource "aws_lb_listener" "listener" {
   load_balancer_arn = "${aws_lb.balancer.arn}"
@@ -188,10 +164,12 @@ resource "aws_lb_listener" "listener" {
 #           Launch Config
 #######################################
 resource "aws_launch_configuration" "launch_conf" {
-  count         = "${var.enable == 0 ? 1 : 0}"
-  name_prefix   = "danny_launch_configuration"
-  image_id      = "ami-3548444c"
-  instance_type = "t2.micro"
+  count                       = "${var.enable == 0 ? 1 : 0}"
+  name_prefix                 = "danny_launch_configuration"
+  image_id                    = "ami-3548444c"
+  instance_type               = "t2.micro"
+  security_groups             = ["${aws_security_group.allow_all.id}"]
+  associate_public_ip_address = true
 
   lifecycle {
     create_before_destroy = true
@@ -206,6 +184,19 @@ resource "aws_launch_template" "launch_temp" {
   name_prefix   = "danny_launch_template"
   image_id      = "ami-3548444c"
   instance_type = "t2.micro"
+
+  tag_specifications {
+    resource_type = "instance"
+
+    tags {
+      Name = "danny_instance"
+    }
+  }
+
+  network_interfaces {
+    associate_public_ip_address = true
+    security_groups             = ["${aws_security_group.allow_all.id}"]
+  }
 }
 
 #######################################
@@ -213,8 +204,8 @@ resource "aws_launch_template" "launch_temp" {
 #######################################
 resource "aws_autoscaling_group" "scale_template" {
   count               = "${var.enable == 1 ? 1 : 0}"
-  name                = "danny_autoscaling"
-  min_size            = 1
+  name                = "danny_autoscaling_tem"
+  min_size            = 4
   max_size            = 5
   vpc_zone_identifier = ["${aws_subnet.subnet.*.id}"]
 
@@ -230,8 +221,8 @@ resource "aws_autoscaling_group" "scale_template" {
 
 resource "aws_autoscaling_group" "scale_config" {
   count               = "${var.enable != 1 ? 1 : 0}"
-  name                = "danny_autoscaling"
-  min_size            = 1
+  name                = "danny_autoscaling_config"
+  min_size            = 4
   max_size            = 5
   vpc_zone_identifier = ["${aws_subnet.subnet.*.id}"]
 
@@ -239,6 +230,12 @@ resource "aws_autoscaling_group" "scale_config" {
 
   lifecycle {
     create_before_destroy = true
+  }
+
+  tags {
+    key                 = "Name"
+    value               = "danny_instance"
+    propagate_at_launch = true
   }
 }
 
