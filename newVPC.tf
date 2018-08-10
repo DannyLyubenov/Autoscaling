@@ -39,7 +39,7 @@ resource "aws_subnet" "subnet" {
   availability_zone = "${element(data.aws_availability_zones.available.names, count.index)}"
 
   tags {
-    Name = "${format("AZ_%s", "${element(data.aws_availability_zones.available.names, count.index)}" )}"
+    Name = "${format("AZ_%s", "${element(data.aws_availability_zones.available.names, count.index + 1)}" )}"
   }
 }
 
@@ -149,10 +149,12 @@ resource "aws_lb_target_group" "target" {
 
 resource "aws_lb_listener" "listener" {
   load_balancer_arn = "${aws_lb.balancer.arn}"
-  port              = "443"
-  protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-2016-08"
-  certificate_arn   = "arn:aws:acm:eu-west-1:373993042843:certificate/9eedab26-6919-408b-9949-9362d80f75a6"
+  port              = "80"
+  protocol          = "HTTP"
+
+  # protocol          = "HTTPS"
+  # ssl_policy        = "ELBSecurityPolicy-2016-08"
+  # certificate_arn   = "arn:aws:acm:eu-west-1:373993042843:certificate/9eedab26-6919-408b-9949-9362d80f75a6"
 
   default_action {
     target_group_arn = "${aws_lb_target_group.target.arn}"
@@ -169,6 +171,7 @@ resource "aws_launch_configuration" "launch_conf" {
   image_id                    = "ami-3548444c"
   instance_type               = "t2.micro"
   security_groups             = ["${aws_security_group.allow_all.id}"]
+  key_name                    = "${aws_key_pair.CogKey.key_name}"
   associate_public_ip_address = true
 
   lifecycle {
@@ -184,6 +187,7 @@ resource "aws_launch_template" "launch_temp" {
   name_prefix   = "danny_launch_template"
   image_id      = "ami-3548444c"
   instance_type = "t2.micro"
+  key_name      = "${aws_key_pair.CogKey.key_name}"
 
   tag_specifications {
     resource_type = "instance"
@@ -205,9 +209,10 @@ resource "aws_launch_template" "launch_temp" {
 resource "aws_autoscaling_group" "scale_template" {
   count               = "${var.enable == 1 ? 1 : 0}"
   name                = "danny_autoscaling_tem"
-  min_size            = 4
-  max_size            = 5
+  min_size            = "${var.min_val}"
+  max_size            = "${var.max_val}"
   vpc_zone_identifier = ["${aws_subnet.subnet.*.id}"]
+  target_group_arns   = ["${aws_lb_target_group.target.arn}"]
 
   launch_template = {
     id      = "${aws_launch_template.launch_temp.id}"
@@ -222,9 +227,10 @@ resource "aws_autoscaling_group" "scale_template" {
 resource "aws_autoscaling_group" "scale_config" {
   count               = "${var.enable != 1 ? 1 : 0}"
   name                = "danny_autoscaling_config"
-  min_size            = 4
-  max_size            = 5
+  min_size            = "${var.min_val}"
+  max_size            = "${var.max_val}"
   vpc_zone_identifier = ["${aws_subnet.subnet.*.id}"]
+  target_group_arns   = ["${aws_lb_target_group.target.arn}"]
 
   launch_configuration = "${aws_launch_configuration.launch_conf.name}"
 
