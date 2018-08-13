@@ -144,6 +144,24 @@ resource "aws_lb_target_group" "target" {
 }
 
 #######################################
+#             Bastian Host
+#######################################
+resource "aws_instance" "web" {
+  ami                         = "ami-3548444c"
+  instance_type               = "t2.micro"
+  associate_public_ip_address = true                                   #auto assign IPv4 address
+  vpc_security_group_ids      = ["${aws_security_group.allow_all.id}"]
+  key_name                    = "${aws_key_pair.CogKey.key_name}"
+
+  tags {
+    Name = "danny_bastian_host"
+  }
+
+  # subnet_id = "${element(aws_subnet.subnet.*.id,count.index)}"
+  subnet_id = "${aws_subnet.subnet.1.id}"
+}
+
+#######################################
 #      Target Group Attachement
 #######################################
 
@@ -168,7 +186,6 @@ resource "aws_launch_configuration" "launch_conf" {
   instance_type               = "t2.micro"
   security_groups             = ["${aws_security_group.allow_all.id}"]
   key_name                    = "${aws_key_pair.CogKey.key_name}"
-  associate_public_ip_address = true
 
   lifecycle {
     create_before_destroy = true
@@ -194,7 +211,6 @@ resource "aws_launch_template" "launch_temp" {
   }
 
   network_interfaces {
-    associate_public_ip_address = true
     security_groups             = ["${aws_security_group.allow_all.id}"]
   }
 }
