@@ -152,10 +152,6 @@ resource "aws_lb_listener" "listener" {
   port              = "80"
   protocol          = "HTTP"
 
-  # protocol          = "HTTPS"
-  # ssl_policy        = "ELBSecurityPolicy-2016-08"
-  # certificate_arn   = "arn:aws:acm:eu-west-1:373993042843:certificate/9eedab26-6919-408b-9949-9362d80f75a6"
-
   default_action {
     target_group_arn = "${aws_lb_target_group.target.arn}"
     type             = "forward"
