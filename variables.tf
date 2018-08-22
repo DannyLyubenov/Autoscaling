@@ -1,7 +1,19 @@
 variable "region" {}
 
-variable "cidrs" {
+variable "pr_cidrs" {
   type = "list"
+}
+
+variable "pub_cidrs" {
+  type = "list"
+}
+
+variable "AMI"{
+  default = "ami-3548444c"
+}
+
+variable "type"{
+  default = "t2.micro"
 }
 
 variable "vpc_name" {}

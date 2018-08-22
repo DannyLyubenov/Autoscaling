@@ -27,36 +27,53 @@ resource "aws_internet_gateway" "gw" {
   }
 }
 
+#######################################
+#          NAT Gateway
+#######################################
+resource "aws_nat_gateway" "nat" {
+  allocation_id = "${aws_eip.eip.id}"
+  subnet_id     = "${aws_subnet.public_subnet.0.id}"
+
+  tags {
+    Name = "danny_nat"
+  }
+}
+
+resource "aws_eip" "eip" {
+  vpc = true
+}
+
 data "aws_availability_zones" "available" {}
 
 #######################################
 #                Subnets
 #######################################
-resource "aws_subnet" "subnet" {
-  count             = "${length(var.cidrs)}"
+resource "aws_subnet" "private_subnet" {
+  count             = "${length(var.pr_cidrs)}"
   vpc_id            = "${aws_vpc.vpc.id}"
-  cidr_block        = "${element(var.cidrs, count.index)}"
+  cidr_block        = "${element(var.pr_cidrs, count.index)}"
   availability_zone = "${element(data.aws_availability_zones.available.names, count.index)}"
 
   tags {
-    Name = "${format("AZ_%s", "${element(data.aws_availability_zones.available.names, count.index + 1)}" )}"
+    Name = "${format("private_%s", "${element(data.aws_availability_zones.available.names, count.index + 1)}" )}"
   }
 }
 
-#
-#######################################
-#Route table assosiation for each subnet
-#######################################
-resource "aws_route_table_association" "assosiate" {
-  count          = "${length(var.cidrs)}"
-  subnet_id      = "${element(aws_subnet.subnet.*.id,count.index)}"
-  route_table_id = "${aws_route_table.r.id}"
+resource "aws_subnet" "public_subnet" {
+  count             = "${length(var.pub_cidrs)}"
+  vpc_id            = "${aws_vpc.vpc.id}"
+  cidr_block        = "${element(var.pub_cidrs, count.index)}"
+  availability_zone = "${element(data.aws_availability_zones.available.names, count.index)}"
+
+  tags {
+    Name = "${format("public_%s", "${element(data.aws_availability_zones.available.names, count.index + 1)}" )}"
+  }
 }
 
 #######################################
 #               Route Table
 #######################################
-resource "aws_route_table" "r" {
+resource "aws_route_table" "public_table" {
   vpc_id = "${aws_vpc.vpc.id}"
 
   tags {
@@ -64,10 +81,42 @@ resource "aws_route_table" "r" {
   }
 }
 
-resource "aws_route" "r" {
-  route_table_id         = "${aws_route_table.r.id}"
+resource "aws_route" "public_route" {
+  route_table_id         = "${aws_route_table.public_table.id}"
   gateway_id             = "${aws_internet_gateway.gw.id}"
   destination_cidr_block = "0.0.0.0/0"
+}
+
+#-------------------------------------------------
+resource "aws_route_table" "private_table" {
+  count  = "${length(var.pr_cidrs)}"
+  vpc_id = "${aws_vpc.vpc.id}"
+
+  tags {
+    Name = "${format("%s-private", var.vpc_name)}"
+  }
+}
+
+resource "aws_route" "private_route" {
+  count                  = "${length(var.pr_cidrs)}"
+  route_table_id         = "${element(aws_route_table.private_table.*.id, count.index)}"
+  nat_gateway_id         = "${aws_nat_gateway.nat.id}"
+  destination_cidr_block = "0.0.0.0/0"
+}
+
+#######################################
+#Route table assosiation for each subnet
+#######################################
+resource "aws_route_table_association" "assosiate_public" {
+  count          = "${length(var.pub_cidrs)}"
+  subnet_id      = "${element(aws_subnet.public_subnet.*.id,count.index)}"
+  route_table_id = "${aws_route_table.public_table.id}"
+}
+
+resource "aws_route_table_association" "assosiate_private" {
+  count          = "${length(var.pr_cidrs)}"
+  subnet_id      = "${element(aws_subnet.private_subnet.*.id,count.index)}"
+  route_table_id = "${element(aws_route_table.private_table.*.id, count.index)}"
 }
 
 #######################################
@@ -106,6 +155,13 @@ resource "aws_security_group" "allow_all" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  egress {
+    from_port   = "-1"
+    to_port     = "-1"
+    protocol    = "icmp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   tags {
     Name = "allow_all"
   }
@@ -118,10 +174,10 @@ resource "aws_lb" "balancer" {
   name               = "danny-alb"
   load_balancer_type = "application"
   security_groups    = ["${aws_security_group.allow_all.id}"]
-  subnets            = ["${aws_subnet.subnet.*.id}"]
+  subnets            = ["${aws_subnet.public_subnet.*.id}"]
 
   tags {
-    Name = "balancer"
+    Name = "danny_balancer"
   }
 }
 
@@ -144,27 +200,8 @@ resource "aws_lb_target_group" "target" {
 }
 
 #######################################
-#             Bastian Host
+#      Target Group Listener
 #######################################
-resource "aws_instance" "web" {
-  ami                         = "ami-3548444c"
-  instance_type               = "t2.micro"
-  associate_public_ip_address = true                                   #auto assign IPv4 address
-  vpc_security_group_ids      = ["${aws_security_group.allow_all.id}"]
-  key_name                    = "${aws_key_pair.CogKey.key_name}"
-
-  tags {
-    Name = "danny_bastian_host"
-  }
-
-  # subnet_id = "${element(aws_subnet.subnet.*.id,count.index)}"
-  subnet_id = "${aws_subnet.subnet.1.id}"
-}
-
-#######################################
-#      Target Group Attachement
-#######################################
-
 resource "aws_lb_listener" "listener" {
   load_balancer_arn = "${aws_lb.balancer.arn}"
   port              = "80"
@@ -177,19 +214,46 @@ resource "aws_lb_listener" "listener" {
 }
 
 #######################################
+#      Target Group Attachement
+#######################################
+# resource "aws_lb_target_group_attachment" "attachment" {
+#   target_group_arn = "${aws_lb_target_group.target.arn}"
+#   target_id        = "${aws_instance.bastion.id}"
+#   port = 80
+# }
+
+#######################################
+#             Bastian Host
+#######################################
+resource "aws_instance" "bastion" {
+  ami                         = "${var.AMI}"
+  instance_type               = "${var.type}"
+  associate_public_ip_address = true                                   #auto assign IPv4 address
+  vpc_security_group_ids      = ["${aws_security_group.allow_all.id}"]
+  key_name                    = "${aws_key_pair.CogKey.key_name}"
+
+  tags {
+    Name = "danny_bastian_host"
+  }
+
+  # subnet_id = "${element(aws_subnet.subnet.*.id,count.index)}"
+  subnet_id = "${aws_subnet.public_subnet.0.id}"
+}
+
+#######################################
 #           Launch Config
 #######################################
 resource "aws_launch_configuration" "launch_conf" {
-  count                       = "${var.enable == 0 ? 1 : 0}"
-  name_prefix                 = "danny_launch_configuration"
-  image_id                    = "ami-3548444c"
-  instance_type               = "t2.micro"
-  security_groups             = ["${aws_security_group.allow_all.id}"]
-  key_name                    = "${aws_key_pair.CogKey.key_name}"
+  count           = "${var.enable == 0 ? 1 : 0}"
+  name_prefix     = "danny_launch_configuration"
+  image_id        = "${var.AMI}"
+  instance_type   = "${var.type}"
+  security_groups = ["${aws_security_group.allow_all.id}"]
+  key_name        = "${aws_key_pair.CogKey.key_name}"
 
-  lifecycle {
-    create_before_destroy = true
-  }
+  # lifecycle {
+  #   create_before_destroy = true
+  # }
 }
 
 #######################################
@@ -198,8 +262,8 @@ resource "aws_launch_configuration" "launch_conf" {
 resource "aws_launch_template" "launch_temp" {
   count         = "${var.enable == 1 ? 1 : 0}"
   name_prefix   = "danny_launch_template"
-  image_id      = "ami-3548444c"
-  instance_type = "t2.micro"
+  image_id      = "${var.AMI}"
+  instance_type = "${var.type}"
   key_name      = "${aws_key_pair.CogKey.key_name}"
 
   tag_specifications {
@@ -211,7 +275,7 @@ resource "aws_launch_template" "launch_temp" {
   }
 
   network_interfaces {
-    security_groups             = ["${aws_security_group.allow_all.id}"]
+    security_groups = ["${aws_security_group.allow_all.id}"]
   }
 }
 
@@ -223,7 +287,7 @@ resource "aws_autoscaling_group" "scale_template" {
   name                = "danny_autoscaling_tem"
   min_size            = "${var.min_val}"
   max_size            = "${var.max_val}"
-  vpc_zone_identifier = ["${aws_subnet.subnet.*.id}"]
+  vpc_zone_identifier = ["${aws_subnet.private_subnet.*.id}"]
   target_group_arns   = ["${aws_lb_target_group.target.arn}"]
 
   launch_template = {
@@ -231,9 +295,9 @@ resource "aws_autoscaling_group" "scale_template" {
     version = "$$Latest"
   }
 
-  lifecycle {
-    create_before_destroy = true
-  }
+  # lifecycle {
+  #   create_before_destroy = true
+  # }
 }
 
 resource "aws_autoscaling_group" "scale_config" {
@@ -241,14 +305,14 @@ resource "aws_autoscaling_group" "scale_config" {
   name                = "danny_autoscaling_config"
   min_size            = "${var.min_val}"
   max_size            = "${var.max_val}"
-  vpc_zone_identifier = ["${aws_subnet.subnet.*.id}"]
+  vpc_zone_identifier = ["${aws_subnet.private_subnet.*.id}"]
   target_group_arns   = ["${aws_lb_target_group.target.arn}"]
 
   launch_configuration = "${aws_launch_configuration.launch_conf.name}"
 
-  lifecycle {
-    create_before_destroy = true
-  }
+  # lifecycle {
+  #   create_before_destroy = true
+  # }
 
   tags {
     key                 = "Name"
