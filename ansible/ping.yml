@@ -1,9 +1,0 @@
----
-- hosts: tag_Name_danny_bastian_host
-  remote_user: centos
-  become: yes
-
-  tasks:
-    - name: test connection
-      ping:
-      remote_user: centos

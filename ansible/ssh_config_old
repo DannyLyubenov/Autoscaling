@@ -1,9 +1,11 @@
 Host 192.168.*.*
   User centos
   ProxyJump COG-LABS_BASTION
+  IdentityFile ~/.ssh/keys/CogKey
 
 Host COG-LABS_BASTION
-  HostName 34.249.36.78
+  HostName 34.240.205.178
+  User centos
   IdentityFile ~/.ssh/keys/CogKey
   UserKnownHostsFile /dev/null
   StrictHostKeyChecking no

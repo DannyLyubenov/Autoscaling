@@ -214,15 +214,6 @@ resource "aws_lb_listener" "listener" {
 }
 
 #######################################
-#      Target Group Attachement
-#######################################
-# resource "aws_lb_target_group_attachment" "attachment" {
-#   target_group_arn = "${aws_lb_target_group.target.arn}"
-#   target_id        = "${aws_instance.bastion.id}"
-#   port = 80
-# }
-
-#######################################
 #             Bastian Host
 #######################################
 resource "aws_instance" "bastion" {
@@ -238,6 +229,10 @@ resource "aws_instance" "bastion" {
 
   # subnet_id = "${element(aws_subnet.subnet.*.id,count.index)}"
   subnet_id = "${aws_subnet.public_subnet.0.id}"
+
+  provisioner "local-exec" {
+    command = "./file.py"
+  }
 }
 
 #######################################
@@ -251,9 +246,6 @@ resource "aws_launch_configuration" "launch_conf" {
   security_groups = ["${aws_security_group.allow_all.id}"]
   key_name        = "${aws_key_pair.CogKey.key_name}"
 
-  # lifecycle {
-  #   create_before_destroy = true
-  # }
 }
 
 #######################################
@@ -295,9 +287,6 @@ resource "aws_autoscaling_group" "scale_template" {
     version = "$$Latest"
   }
 
-  # lifecycle {
-  #   create_before_destroy = true
-  # }
 }
 
 resource "aws_autoscaling_group" "scale_config" {
@@ -309,10 +298,6 @@ resource "aws_autoscaling_group" "scale_config" {
   target_group_arns   = ["${aws_lb_target_group.target.arn}"]
 
   launch_configuration = "${aws_launch_configuration.launch_conf.name}"
-
-  # lifecycle {
-  #   create_before_destroy = true
-  # }
 
   tags {
     key                 = "Name"
